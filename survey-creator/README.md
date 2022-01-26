@@ -16,6 +16,6 @@ This App connects to PostgreSQL-Databank.
         )
   
 3. User that is used to login with app needs the following privileges
-  + INSERT privileges on table *surveys* 
-  + USAGE privileges on id-sequence
-  + CREATE and USAGE privileges on schema *public*
+          + INSERT privileges on table *surveys* 
+          + USAGE privileges on id-sequence
+          + CREATE and USAGE privileges on schema *public*
