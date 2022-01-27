@@ -1,0 +1,135 @@
+---
+title: "Analyze survey results"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: row
+    css: styles.css
+runtime: shiny
+---
+
+```{r global, include=FALSE}
+# load data in 'global' chunk so it can be shared by all users of the dashboard
+library(flexdashboard)
+library(stringr)
+library(DT)
+library(RPostgres)
+library(dplyr)
+library(plotly)
+library(lubridate)
+
+source('functions.R')
+
+db <- dbConnect(
+  Postgres(),
+  dbname = 'surveys',
+  host = 'localhost',
+  port = 5432,
+  user = 'username',
+  password = 'password'
+)
+
+availableSurveys <- dbGetQuery(db, 'select * from surveys order by title;')
+
+rv <- reactiveValues()
+
+
+
+```
+ 
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+
+selectInput(
+  "chooseSurvey", 
+  label = "Choose survey",
+  choices = availableSurveys$title
+)
+
+observeEvent(input$chooseSurvey, {
+    rv$currentSurvey <- availableSurveys %>% 
+      filter(title == input$chooseSurvey)
+    
+    rv$currentSurveyInfo <- dbGetQuery(db, paste0('select * from ',rv$currentSurvey$tablename_survey))
+    
+    query <- paste0(
+      'SELECT DISTINCT ON (subject_id, question_id)
+          subject_id, question_id, question_type, response, zeitstempel 
+       FROM ', rv$currentSurvey$tablename_result,
+      ' ORDER BY subject_id, question_id, zeitstempel DESC;'
+    )
+    rv$currentSurveyData <- dbGetQuery(db, query)
+    
+    rv$n_user <- length(unique(rv$currentSurveyData$subject_id))
+    rv$n_quests <- length(unique(rv$currentSurveyData$question_id))
+})
+
+```
+
+Row
+-----------------------------------------------------------------------
+
+
+### Participants {.value-box}
+
+```{r}
+renderValueBox({
+  if(!is.null(input$chooseSurvey)) {
+    valueBox(
+      value = rv$n_user,
+      icon = "fa-user",
+      color = '#415EA1'
+    )
+  }
+})
+```
+
+### Questions {.value-box}
+
+```{r}
+renderValueBox({
+  valueBox(
+    value = rv$n_quests,
+    icon = "fa-question",
+    color = '#D99739'
+  )
+})
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Results
+
+```{r 'Ergebnis'}
+uiErgebnis <- fluidPage(
+  div(id="placeholder")
+)
+
+serverErgebnis <- function(input, output, session) {
+  observe({
+    print(rv$currentSurveyInfo)
+    print(rv$currentSurveyData)
+    quests <- unique(rv$currentSurveyInfo %>% select(question, input_id))
+    print(quests)
+    
+    for (id in quests$input_id) {
+      
+      data <- rv$currentSurveyData %>%
+        inner_join(quests, by = c("question_id" = "input_id")) %>%
+        filter(question_id == id)
+      print(data)
+            
+      insertUI(
+        selector = "#placeholder",
+        where = "afterEnd",
+        ui = getUI(data)
+      )
+    }
+  })
+}
+
+shinyApp(ui = uiErgebnis, server = serverErgebnis)
+```
